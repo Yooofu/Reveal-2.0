@@ -1,6 +1,8 @@
 import { motion } from "motion/react";
-import { X, ExternalLink, TrendingUp, TrendingDown, Minus, Shield, Handshake, Rocket } from "lucide-react";
+import { X, ExternalLink, TrendingUp, TrendingDown, Shield, Handshake, Rocket } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
 
 interface AITool {
   name: string;
@@ -24,7 +26,19 @@ interface SkillDetailViewProps {
     icon: string;
     text: string;
     risk: 'low' | 'medium' | 'high';
+    skillId?: string;
+    riskScore?: number;
+    // Per-skill strategies from database
+    defendStrategies?: string[];
+    augmentStrategies?: string[];
+    pivotStrategies?: string[];
   };
+  analysis?: {
+    recommendations?: string[];
+    defendStrategies?: string[];
+    augmentStrategies?: string[];
+    pivotStrategies?: string[];
+  } | null;
   onClose: () => void;
 }
 
@@ -52,101 +66,77 @@ const getRiskColor = (risk: 'low' | 'medium' | 'high'): string => {
   }
 };
 
-const getGradientColor = (percentage: number): string => {
-  if (percentage < 33) return '#22c55e';
-  if (percentage < 66) return '#eab308';
-  return '#ef4444';
+const getRiskMessage = (risk: 'low' | 'medium' | 'high'): string => {
+  switch (risk) {
+    case 'low': return 'You Safe, You Good, You Lucky';
+    case 'medium': return 'You better hurry, you might be next';
+    case 'high': return "I'm COOOOOOKKKKK lahhhh";
+  }
 };
 
-// Mock AI tools data
-const mockAITools: Record<string, AITool[]> = {
-  'advanced python programming': [
-    {
-      name: 'GitHub Copilot',
-      description: 'AI pair programmer that suggests code completions',
-      launchDate: '2021-06',
-      relevanceScore: 92,
-      website: 'https://github.com/features/copilot',
-      threatLevel: 'high'
-    },
-    {
-      name: 'ChatGPT Code Interpreter',
-      description: 'Executes and debugs Python code automatically',
-      launchDate: '2023-07',
-      relevanceScore: 88,
-      website: 'https://openai.com/chatgpt',
-      threatLevel: 'high'
-    },
-    {
-      name: 'Cursor AI',
-      description: 'AI-first code editor for faster development',
-      launchDate: '2023-03',
-      relevanceScore: 85,
-      website: 'https://cursor.sh',
-      threatLevel: 'high'
-    }
-  ],
-  'default': [
-    {
-      name: 'Generic AI Assistant',
-      description: 'Multi-purpose AI tool for various tasks',
-      launchDate: '2023-01',
-      relevanceScore: 70,
-      website: 'https://example.com',
-      threatLevel: 'medium'
-    }
-  ]
-};
-
-// Mock pathways data
-const mockPathways: Pathway[] = [
+// Default pathways structure - strategies come from database analysis
+const defaultPathwayDescriptions = [
   {
-    id: 'defend',
+    id: 'defend' as const,
     title: 'Defend',
     icon: <Shield className="w-6 h-6" />,
     description: 'Double down and specialize in areas AI struggles with',
-    strategy: [
-      'Focus on complex problem-solving that requires deep domain expertise',
-      'Build interpersonal skills and stakeholder management',
-      'Develop creative and strategic thinking capabilities',
-      'Master edge cases and nuanced scenarios AI misses'
-    ]
   },
   {
-    id: 'augment',
+    id: 'augment' as const,
     title: 'Augment',
     icon: <Handshake className="w-6 h-6" />,
     description: 'Learn to work WITH AI to amplify your capabilities',
-    strategy: [
-      'Master prompt engineering and AI tool orchestration',
-      'Learn to review and refine AI-generated outputs',
-      'Combine your expertise with AI speed and scale',
-      'Build AI-enhanced workflows for 10x productivity'
-    ]
   },
   {
-    id: 'pivot',
+    id: 'pivot' as const,
     title: 'Pivot',
     icon: <Rocket className="w-6 h-6" />,
     description: 'Transition to adjacent roles with lower AI risk',
-    strategy: [
-      'Identify transferable skills in your current role',
-      'Explore emerging roles created by AI disruption',
-      'Build skills in AI-resistant areas like leadership',
-      'Consider roles that leverage your unique background'
-    ]
   }
 ];
 
-export function SkillDetailView({ skill, onClose }: SkillDetailViewProps) {
+export function SkillDetailView({ skill, analysis, onClose }: SkillDetailViewProps) {
   const [expandedPathway, setExpandedPathway] = useState<string | null>(null);
   
-  const riskScore = getRiskScore(skill.risk);
+  // Use actual risk score from database if available, otherwise use fallback based on risk level
+  const riskScore = skill.riskScore ?? getRiskScore(skill.risk);
   const riskColor = getRiskColor(skill.risk);
   const riskLabel = getRiskLabel(skill.risk);
   
-  // Get AI tools for this skill or use default
-  const aiTools = mockAITools[skill.text] || mockAITools['default'];
+  // Use AI-generated pathways from SKILL-SPECIFIC database strategies
+  // Fallback to analysis-level strategies for backward compatibility
+  const pathways: Pathway[] = defaultPathwayDescriptions.map(pathway => ({
+    ...pathway,
+    strategy: skill[`${pathway.id}Strategies`] || analysis?.[`${pathway.id}Strategies`] || []
+  }));
+  
+  // Debug: Log if we're using skill-specific or fallback strategies
+  const hasSkillStrategies = skill.defendStrategies || skill.augmentStrategies || skill.pivotStrategies;
+  if (hasSkillStrategies) {
+    console.log(`✅ Using skill-specific strategies for: ${skill.text}`);
+  } else if (analysis) {
+    console.log(`⚠️ Falling back to resume-level strategies for: ${skill.text}`);
+  }
+  
+  // Query real AI tools from database - NO MOCK DATA
+  const dbAITools = useQuery(
+    api.controllers.aiToolController.getAIToolsForSkill,
+    skill.skillId ? { skillId: skill.skillId as any } : "skip"
+  );
+  
+  // Check if query is still loading
+  const isLoadingTools = dbAITools === undefined;
+  
+  // Convert database AI tools to component format
+  const aiTools: AITool[] = dbAITools?.map(tool => ({
+    name: tool.name,
+    description: tool.description,
+    launchDate: tool.createdAt ? new Date(tool.createdAt).toISOString().slice(0, 7) : '2024-01',
+    relevanceScore: 85, // Could be calculated based on capabilities match
+    website: tool.homepageUrl || tool.documentationUrl || '#',
+    threatLevel: (skill.risk || 'medium') as 'low' | 'medium' | 'high',
+  })) || [];
   
   // Calculate the circumference for the circular gauge
   const radius = 80;
@@ -234,11 +224,16 @@ export function SkillDetailView({ skill, onClose }: SkillDetailViewProps) {
                 </div>
               </div>
 
-              {/* Trend Indicator */}
-              <div className="flex items-center gap-2 pixelated-border border-2 border-[#343536] bg-[#0a0a0a] px-4 py-2">
-                <TrendingUp className="w-4 h-4 text-[#ef4444]" />
-                <span className="pixel-text text-[#d7dadc]" style={{ fontSize: '0.5rem' }}>
-                  RISK INCREASING
+              {/* Risk Message */}
+              <div className="flex items-center gap-2 pixelated-border border-2 px-6 py-2" style={{
+                borderColor: riskColor,
+                backgroundColor: `${riskColor}20`
+              }}>
+                {skill.risk === 'low' && <TrendingDown className="w-4 h-4" style={{ color: riskColor }} />}
+                {skill.risk === 'medium' && <TrendingUp className="w-4 h-4" style={{ color: riskColor }} />}
+                {skill.risk === 'high' && <TrendingUp className="w-4 h-4" style={{ color: riskColor }} />}
+                <span className="pixel-text" style={{ fontSize: '0.5rem', color: riskColor }}>
+                  {getRiskMessage(skill.risk)}
                 </span>
               </div>
             </div>
@@ -250,8 +245,24 @@ export function SkillDetailView({ skill, onClose }: SkillDetailViewProps) {
               CURRENT AI REPLACEMENT TOOLS
             </h3>
             
-            <div className="space-y-4">
-              {aiTools.map((tool, index) => (
+            {isLoadingTools ? (
+              <div className="text-center py-8">
+                <div className="pixel-text text-[#ff4500]" style={{ fontSize: '0.5rem' }}>
+                  Loading AI tools...
+                </div>
+              </div>
+            ) : aiTools.length === 0 ? (
+              <div className="pixelated-border border-2 border-[#343536] bg-[#0a0a0a] p-6 text-center">
+                <div className="pixel-text text-[#d7dadc] mb-2" style={{ fontSize: '0.5rem' }}>
+                  No AI tools discovered yet for this skill
+                </div>
+                <div className="pixel-text text-[#808080]" style={{ fontSize: '0.4rem', lineHeight: '1.6' }}>
+                  AI tools will be discovered by Exa when you upload a resume
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {aiTools.map((tool, index) => (
                 <motion.div
                   key={index}
                   initial={{ opacity: 0, x: -20 }}
@@ -315,7 +326,8 @@ export function SkillDetailView({ skill, onClose }: SkillDetailViewProps) {
                   </div>
                 </motion.div>
               ))}
-            </div>
+              </div>
+            )}
           </section>
 
           {/* AI Augmentation Pathways Section */}
@@ -325,7 +337,7 @@ export function SkillDetailView({ skill, onClose }: SkillDetailViewProps) {
             </h3>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {mockPathways.map((pathway, index) => (
+              {pathways.map((pathway, index) => (
                 <motion.div
                   key={pathway.id}
                   initial={{ opacity: 0, y: 20 }}
@@ -363,16 +375,24 @@ export function SkillDetailView({ skill, onClose }: SkillDetailViewProps) {
                       exit={{ opacity: 0, height: 0 }}
                       className="mt-4 pt-4 border-t-2 border-[#343536]"
                     >
-                      <ul className="space-y-3">
-                        {pathway.strategy.map((item, idx) => (
-                          <li key={idx} className="flex items-start gap-2">
-                            <span className="text-[#ff4500] flex-shrink-0" style={{ lineHeight: '1.6' }}>▸</span>
-                            <span className="pixel-text text-[#d7dadc]" style={{ fontSize: '0.4rem', lineHeight: '1.6' }}>
-                              {item}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
+                      {pathway.strategy.length === 0 ? (
+                        <div className="text-center py-4">
+                          <div className="pixel-text text-[#808080]" style={{ fontSize: '0.4rem', lineHeight: '1.6' }}>
+                            No personalized strategies yet. Upload your resume to get AI-powered career recommendations tailored to your skills.
+                          </div>
+                        </div>
+                      ) : (
+                        <ul className="space-y-3">
+                          {pathway.strategy.map((item, idx) => (
+                            <li key={idx} className="flex items-start gap-2">
+                              <span className="text-[#ff4500] flex-shrink-0" style={{ lineHeight: '1.6' }}>▸</span>
+                              <span className="pixel-text text-[#d7dadc]" style={{ fontSize: '0.4rem', lineHeight: '1.6' }}>
+                                {item}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </motion.div>
                   )}
                 </motion.div>

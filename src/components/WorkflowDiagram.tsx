@@ -7,11 +7,24 @@ interface Skill {
   icon: string;
   text: string;
   risk: 'low' | 'medium' | 'high';
+  skillId?: string;
+  riskScore?: number; // Actual risk score from database
+  // Per-skill strategies
+  defendStrategies?: string[];
+  augmentStrategies?: string[];
+  pivotStrategies?: string[];
 }
 
 interface WorkflowDiagramProps {
   skills: Skill[];
-  userName?: string;
+  analysis?: {
+    recommendations?: string[];
+    averageRiskScore?: number;
+    overallRiskLevel?: string;
+    defendStrategies?: string[];
+    augmentStrategies?: string[];
+    pivotStrategies?: string[];
+  } | null;
   onBack: () => void;
 }
 
@@ -26,22 +39,77 @@ const getRiskColor = (risk: 'low' | 'medium' | 'high') => {
   }
 };
 
-export function WorkflowDiagram({ skills, userName = "Your Profile", onBack }: WorkflowDiagramProps) {
+export function WorkflowDiagram({ skills, analysis, onBack }: WorkflowDiagramProps) {
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
-  // Calculate positions for skills in a radial layout with proportional distribution
-  // Use relative units that scale with viewport
-  const radius = 380; // This will be scaled by SVG viewBox
+  // Calculate positions for skills filling the entire page
+  // Leave space around the center circle
   const centerX = 0;
   const centerY = 0;
+  const centerRadius = 70; // Radius of the center "YOU" circle
+  const minDistanceFromCenter = 150; // Minimum distance from center circle
+  const viewBoxWidth = 1100;
+  const viewBoxHeight = 900;
+  const padding = 100; // Padding from edges
 
-  const skillPositions = skills.map((skill, index) => {
-    // Ensure even distribution by starting at top and going clockwise
-    const angle = (index / skills.length) * Math.PI * 2 - Math.PI / 2;
-    const x = centerX + Math.cos(angle) * radius;
-    const y = centerY + Math.sin(angle) * radius;
-    return { ...skill, x, y };
-  });
+  // Helper function to calculate line endpoint at circle edge
+  const getLineEndPoint = (skillX: number, skillY: number) => {
+    const angle = Math.atan2(skillY - centerY, skillX - centerX);
+    return {
+      x: centerX + centerRadius * Math.cos(angle),
+      y: centerY + centerRadius * Math.sin(angle)
+    };
+  };
+
+  // Generate positions that fill the page and avoid the center circle
+  const generatePosition = (index: number, existingPositions: Array<{x: number, y: number}>) => {
+    // Use golden ratio for natural distribution
+    const goldenRatio = 1.618033988749895;
+    const goldenAngle = Math.PI * 2 * goldenRatio;
+    const minSkillDistance = 200; // Minimum distance between skills to prevent overlap
+    
+    let x: number = 0;
+    let y: number = 0;
+    let distanceFromCenter: number = 0;
+    let attempts = 0;
+    let tooClose = false;
+    
+    do {
+      // Create well-distributed positions using golden angle
+      const angle = (index * goldenAngle + attempts * 0.5) % (Math.PI * 2);
+      const distance = minDistanceFromCenter + Math.sqrt((index + attempts * 7) / skills.length) * 420;
+      
+      // Convert polar to cartesian with reduced randomness for better spacing
+      const randomOffset = ((index * 73 + attempts * 97) % 100) / 100;
+      x = Math.cos(angle) * distance + (randomOffset - 0.5) * 40; // Reduced from 80
+      y = Math.sin(angle) * distance * 0.85 + (randomOffset - 0.5) * 40; // Reduced from 80
+      
+      // Clamp to viewBox bounds
+      x = Math.max(-viewBoxWidth/2 + padding, Math.min(viewBoxWidth/2 - padding, x));
+      y = Math.max(-viewBoxHeight/2 + padding, Math.min(viewBoxHeight/2 - padding, y));
+      
+      distanceFromCenter = Math.sqrt(x * x + y * y);
+      
+      // Check distance from existing positions to avoid overlaps
+      tooClose = existingPositions.some(pos => {
+        const dist = Math.sqrt(Math.pow(x - pos.x, 2) + Math.pow(y - pos.y, 2));
+        return dist < minSkillDistance;
+      });
+      
+      attempts++;
+    } while ((distanceFromCenter < minDistanceFromCenter || tooClose) && attempts < 100);
+    
+    return { x, y };
+  };
+
+  // Generate positions with collision detection
+  const skillPositions: Array<typeof skills[0] & {x: number, y: number, index: number}> = [];
+  for (let index = 0; index < skills.length; index++) {
+    const existingPositions = skillPositions.map(s => ({x: s.x, y: s.y}));
+    const { x, y } = generatePosition(index, existingPositions);
+    skillPositions.push({ ...skills[index], x, y, index });
+  }
 
   return (
     <div className="size-full bg-[#0a0a0a] overflow-hidden relative flex flex-col">
@@ -58,10 +126,10 @@ export function WorkflowDiagram({ skills, userName = "Your Profile", onBack }: W
       />
 
       {/* Header */}
-      <div className="relative z-10 p-4 sm:p-6 md:p-8 flex items-center justify-between border-b-2 border-[#343536]">
+      <div className="relative z-10 p-4 sm:p-6 md:p-8 flex items-center justify-center border-b-2 border-[#343536]">
         <button
           onClick={onBack}
-          className="pixelated-border bg-transparent border-2 border-[#343536] text-[#d7dadc] px-3 sm:px-4 py-1.5 sm:py-2 hover:border-[#ff4500] hover:text-[#ff4500] transition-colors pixel-text flex items-center gap-1 sm:gap-2 text-xs sm:text-sm"
+          className="absolute left-4 sm:left-6 md:left-8 pixelated-border bg-transparent border-2 border-[#343536] text-[#d7dadc] px-3 sm:px-4 py-1.5 sm:py-2 hover:border-[#ff4500] hover:text-[#ff4500] transition-colors pixel-text flex items-center gap-1 sm:gap-2 text-xs sm:text-sm"
         >
           <ArrowLeft className="w-3 h-3 sm:w-4 sm:h-4" />
           Back
@@ -69,11 +137,30 @@ export function WorkflowDiagram({ skills, userName = "Your Profile", onBack }: W
         <h2 className="pixel-text text-[#ff4500] text-xs sm:text-sm md:text-base">
           SKILL MAP
         </h2>
-        <div className="w-16 sm:w-20 md:w-24" /> {/* Spacer for alignment */}
       </div>
 
+      {/* Empty State - when no skills found */}
+      {skills.length === 0 && (
+        <div className="flex-1 relative overflow-hidden flex items-center justify-center p-8">
+          <div className="text-center max-w-md">
+            <div className="text-6xl mb-4">📄</div>
+            <h3 className="pixel-text text-[#ff4500] text-base mb-4">No Skills Detected</h3>
+            <p className="pixel-text text-[#d7dadc] text-xs leading-relaxed mb-6">
+              We couldn't identify any skills from your resume. Please make sure your resume contains information about your experience, education, skills, or projects.
+            </p>
+            <button
+              onClick={onBack}
+              className="pixelated-border bg-[#ff4500] border-2 border-[#ff4500] text-white px-4 py-2 hover:bg-[#ff5722] hover:border-[#ff5722] transition-colors pixel-text text-xs"
+            >
+              Try Another Resume
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* SVG Container for the diagram */}
-      <div className="flex-1 relative overflow-hidden">
+      {skills.length > 0 && (
+        <div className="flex-1 relative overflow-hidden">
         <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-6 md:p-8">
           <svg
             className="w-full h-full"
@@ -81,23 +168,6 @@ export function WorkflowDiagram({ skills, userName = "Your Profile", onBack }: W
             preserveAspectRatio="xMidYMid meet"
             style={{ maxWidth: '100%', maxHeight: '100%' }}
           >
-            {/* Connection lines */}
-            {skillPositions.map((skill, index) => (
-              <motion.line
-                key={`line-${index}`}
-                x1={centerX}
-                y1={centerY}
-                x2={skill.x}
-                y2={skill.y}
-                stroke="#343536"
-                strokeWidth="2"
-                strokeDasharray="4 4"
-                initial={{ pathLength: 0, opacity: 0 }}
-                animate={{ pathLength: 1, opacity: 1 }}
-                transition={{ duration: 0.5, delay: 0.5 + index * 0.1 }}
-              />
-            ))}
-
             {/* Center profile node */}
             <motion.g
               initial={{ scale: 0, opacity: 0 }}
@@ -127,85 +197,209 @@ export function WorkflowDiagram({ skills, userName = "Your Profile", onBack }: W
               </foreignObject>
             </motion.g>
 
-            {/* Skill nodes */}
+            {/* Skill nodes with their connection lines - non-hovered first */}
             {skillPositions.map((skill, index) => {
+              if (hoveredIndex === index) return null;
               const riskColor = getRiskColor(skill.risk);
+              const animationDelay = 0.5 + (index * 0.05); // Staggered animation
+              const lineEnd = getLineEndPoint(skill.x, skill.y);
+              
               return (
-                <motion.g
-                  key={`skill-${index}`}
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ duration: 0.4, delay: 0.7 + index * 0.1 }}
+                <g
+                  key={`skill-group-${index}`}
+                  onMouseEnter={() => setHoveredIndex(index)}
+                  onMouseLeave={() => setHoveredIndex(null)}
+                  style={{ cursor: 'pointer' }}
                 >
-                  {/* Skill card background */}
-                  <rect
-                    x={skill.x - 90}
-                    y={skill.y - 22}
-                    width="180"
-                    height="44"
-                    fill="#1a1a1b"
+                  {/* Connection line for this skill */}
+                  <motion.line
+                    x1={lineEnd.x}
+                    y1={lineEnd.y}
+                    x2={skill.x}
+                    y2={skill.y}
                     stroke="#343536"
                     strokeWidth="2"
-                    rx="4"
+                    strokeDasharray="4 4"
+                    initial={{ pathLength: 0, opacity: 0 }}
+                    animate={{ 
+                      pathLength: 1, 
+                      opacity: 0.3
+                    }}
+                    transition={{ duration: 0.4, delay: animationDelay }}
                   />
                   
-                  {/* Risk indicator circle - moved to the right */}
-                  <circle
-                    cx={skill.x + 75}
-                    cy={skill.y}
-                    r="10"
-                    fill={riskColor}
-                    stroke={riskColor}
-                    strokeWidth="2"
-                  />
-                  
-                  {/* Inner circle for depth */}
-                  <circle
-                    cx={skill.x + 75}
-                    cy={skill.y}
-                    r="5"
-                    fill="#1a1a1b"
-                    opacity="0.5"
-                  />
-
-                  {/* Skill content */}
-                  <foreignObject
-                    x={skill.x - 85}
-                    y={skill.y - 18}
-                    width="155"
-                    height="36"
+                  {/* Skill tag */}
+                  <motion.g
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ duration: 0.4, delay: animationDelay }}
                   >
-                    <div className="flex flex-row items-center justify-start h-full px-3 gap-2">
-                      <div className="text-xl flex-shrink-0">{skill.icon}</div>
-                      <div className="pixel-text text-white" style={{ fontSize: '0.45rem', lineHeight: '1.3' }}>
-                        {skill.text}
+                    <rect
+                      x={skill.x - 90}
+                      y={skill.y - 22}
+                      width="180"
+                      height="44"
+                      fill="#1a1a1b"
+                      stroke="#343536"
+                      strokeWidth="2"
+                      rx="4"
+                    />
+                    <circle
+                      cx={skill.x + 75}
+                      cy={skill.y}
+                      r="10"
+                      fill={riskColor}
+                      stroke={riskColor}
+                      strokeWidth="2"
+                    />
+                    <circle
+                      cx={skill.x + 75}
+                      cy={skill.y}
+                      r="5"
+                      fill="#1a1a1b"
+                      opacity="0.5"
+                    />
+                    <foreignObject
+                      x={skill.x - 85}
+                      y={skill.y - 18}
+                      width="155"
+                      height="36"
+                    >
+                      <div className="flex flex-row items-center justify-start h-full px-3 gap-2">
+                        <div className="text-xl flex-shrink-0">{skill.icon}</div>
+                        <div className="pixel-text text-white" style={{ fontSize: '0.45rem', lineHeight: '1.3' }}>
+                          {skill.text}
+                        </div>
                       </div>
-                    </div>
-                  </foreignObject>
-
-                  {/* Hover effect and click handler */}
+                    </foreignObject>
+                  </motion.g>
                   <rect
                     x={skill.x - 90}
                     y={skill.y - 22}
                     width="180"
                     height="44"
                     fill="transparent"
-                    stroke={riskColor}
+                    stroke="transparent"
                     strokeWidth="0"
                     rx="4"
-                    className="hover-skill-node"
-                    style={{ cursor: 'pointer' }}
                     onClick={() => setSelectedSkill(skill)}
                   />
-                </motion.g>
+                </g>
               );
             })}
+
+            {/* Hovered skill with highlighted line - rendered last for z-index */}
+            {hoveredIndex !== null && (() => {
+              const skill = skillPositions[hoveredIndex];
+              const riskColor = getRiskColor(skill.risk);
+              const lineEnd = getLineEndPoint(skill.x, skill.y);
+              
+              return (
+                <g
+                  key={`skill-hovered-group-${hoveredIndex}`}
+                  onMouseEnter={() => setHoveredIndex(hoveredIndex)}
+                  onMouseLeave={() => setHoveredIndex(null)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  {/* Highlighted connection line for hovered skill */}
+                  <motion.line
+                    x1={lineEnd.x}
+                    y1={lineEnd.y}
+                    x2={skill.x}
+                    y2={skill.y}
+                    stroke={riskColor}
+                    strokeWidth="3"
+                    strokeDasharray="4 4"
+                    initial={{ pathLength: 1, opacity: 0.3 }}
+                    animate={{ pathLength: 1, opacity: 0.8 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                  />
+                  
+                  <motion.g
+                    initial={{ scale: 1 }}
+                    animate={{ scale: 1.15 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                  >
+                    {/* Glow effect for hovered skill */}
+                    <rect
+                      x={skill.x - 90}
+                      y={skill.y - 22}
+                      width="180"
+                      height="44"
+                      fill={riskColor}
+                      opacity="0.15"
+                      rx="4"
+                      filter="blur(8px)"
+                    />
+                    <rect
+                      x={skill.x - 90}
+                      y={skill.y - 22}
+                      width="180"
+                      height="44"
+                      fill="#1a1a1b"
+                      stroke={riskColor}
+                      strokeWidth="3"
+                      rx="4"
+                    />
+                    <circle
+                      cx={skill.x + 75}
+                      cy={skill.y}
+                      r="12"
+                      fill={riskColor}
+                      opacity="0.3"
+                      filter="blur(4px)"
+                    />
+                    <circle
+                      cx={skill.x + 75}
+                      cy={skill.y}
+                      r="10"
+                      fill={riskColor}
+                      stroke={riskColor}
+                      strokeWidth="2"
+                    />
+                    <circle
+                      cx={skill.x + 75}
+                      cy={skill.y}
+                      r="5"
+                      fill="#1a1a1b"
+                      opacity="0.5"
+                    />
+                    <foreignObject
+                      x={skill.x - 85}
+                      y={skill.y - 18}
+                      width="155"
+                      height="36"
+                    >
+                      <div className="flex flex-row items-center justify-start h-full px-3 gap-2">
+                        <div className="text-xl flex-shrink-0">{skill.icon}</div>
+                        <div className="pixel-text text-white" style={{ fontSize: '0.45rem', lineHeight: '1.3' }}>
+                          {skill.text}
+                        </div>
+                      </div>
+                    </foreignObject>
+                  </motion.g>
+                  <rect
+                    x={skill.x - 90}
+                    y={skill.y - 22}
+                    width="180"
+                    height="44"
+                    fill="transparent"
+                    stroke="transparent"
+                    strokeWidth="0"
+                    rx="4"
+                    onClick={() => setSelectedSkill(skill)}
+                  />
+                </g>
+              );
+            })()}
           </svg>
         </div>
       </div>
+      )}
 
-      {/* Legend */}
-      <div className="relative z-10 p-4 sm:p-6 md:p-8 border-t-2 border-[#343536] flex flex-wrap justify-center gap-4 sm:gap-8 md:gap-12">
+      {/* Legend - only show when there are skills */}
+      {skills.length > 0 && (
+        <div className="relative z-10 p-4 sm:p-6 md:p-8 border-t-2 border-[#343536] flex flex-wrap justify-center gap-4 sm:gap-8 md:gap-12">
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-[#22c55e] flex-shrink-0" />
           <span className="pixel-text text-[#d7dadc]" style={{ fontSize: 'clamp(0.5rem, 1vw, 0.65rem)' }}>
@@ -224,12 +418,14 @@ export function WorkflowDiagram({ skills, userName = "Your Profile", onBack }: W
             HIGH RISK
           </span>
         </div>
-      </div>
+        </div>
+      )}
 
       {/* Skill Detail Modal */}
       {selectedSkill && (
         <SkillDetailView 
           skill={selectedSkill}
+          analysis={analysis}
           onClose={() => setSelectedSkill(null)}
         />
       )}
