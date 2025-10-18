@@ -156,22 +156,25 @@ export function SkillDetailView({ skill, analysis, onClose }: SkillDetailViewPro
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-[#1a1a1b] border-4 border-[#ff4500] pixelated-border max-w-6xl w-full max-h-[90vh] overflow-auto"
+        className="bg-[#1a1a1b] border-4 border-[#ff4500] pixelated-border max-w-6xl w-full max-h-[90vh] overflow-auto relative"
       >
+        {/* Fixed Back Button - Always on upper left */}
+        <button
+          onClick={onClose}
+          className="fixed top-8 left-8 z-50 pixelated-border border-2 border-[#ff4500] bg-[#1a1a1b] p-3 text-[#d7dadc] hover:text-white hover:bg-[#ff4500] transition-all"
+          style={{ imageRendering: 'pixelated', position: "absolute", left:0 }}
+        >
+          <X className="w-6 h-6" />
+        </button>
+
         {/* Header */}
-        <div className="border-b-4 border-[#343536] p-6 flex items-center justify-between sticky top-0 bg-[#1a1a1b] z-10">
+        <div className="border-b-4 border-[#343536] p-6 flex items-center justify-center sticky top-0 bg-[#1a1a1b] z-10">
           <div className="flex items-center gap-4">
             <span className="text-4xl">{skill.icon}</span>
             <h2 className="pixel-text text-[#ff4500] text-lg">
               {skill.text.toUpperCase()}
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="text-[#d7dadc] hover:text-[#ff4500] transition-colors"
-          >
-            <X className="w-6 h-6" />
-          </button>
         </div>
 
         <div className="p-6 space-y-8">

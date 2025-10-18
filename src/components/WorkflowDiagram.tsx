@@ -126,17 +126,22 @@ export function WorkflowDiagram({ skills, analysis, onBack }: WorkflowDiagramPro
       />
 
       {/* Header */}
-      <div className="relative z-10 p-4 sm:p-6 md:p-8 flex items-center justify-center border-b-2 border-[#343536]">
+      <div className="relative z-10 p-4 sm:p-6 md:p-8 flex items-center justify-between border-b-2 border-[#343536]">
+        {/* Back Button */}
         <button
           onClick={onBack}
-          className="absolute left-4 sm:left-6 md:left-8 pixelated-border bg-transparent border-2 border-[#343536] text-[#d7dadc] px-3 sm:px-4 py-1.5 sm:py-2 hover:border-[#ff4500] hover:text-[#ff4500] transition-colors pixel-text flex items-center gap-1 sm:gap-2 text-xs sm:text-sm"
+          className="pixelated-border bg-[#1a1a1b] border-2 border-[#343536] text-[#d7dadc] px-3 sm:px-4 py-1.5 sm:py-2 hover:border-[#ff4500] hover:text-[#ff4500] transition-colors pixel-text flex items-center gap-1 sm:gap-2 text-xs sm:text-sm"
         >
           <ArrowLeft className="w-3 h-3 sm:w-4 sm:h-4" />
           Back
         </button>
+        
         <h2 className="pixel-text text-[#ff4500] text-xs sm:text-sm md:text-base">
           SKILL MAP
         </h2>
+        
+        {/* Spacer to keep title centered */}
+        <div className="w-[72px] sm:w-[88px]"></div>
       </div>
 
       {/* Empty State - when no skills found */}
